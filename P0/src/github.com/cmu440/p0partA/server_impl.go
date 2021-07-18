@@ -11,17 +11,38 @@ import (
 	"strconv"
 )
 
+const (
+	BUFFER_SIZE  = 500
+)
+
+type clientInfo struct {
+	id int;
+	connection net.Conn
+	writeChannel chan string
+	readChannel chan string
+}
+
 type keyValueServer struct {
-	activeClients int;
+	clientMap map[int]clientInfo
 	kvStore kvstore.KVStore;
-	deadClients int;
 	server net.Listener;
+	connectionChannel chan net.Conn
+	activeCountChannel chan int
+	deadCountChannel chan int
+	kvsChannel chan string
+	nextId int
+	deadClients int
 }
 
 
 // New creates and returns (but does not start) a new KeyValueServer.
 func New(store kvstore.KVStore) KeyValueServer {
-	kvServer := keyValueServer{kvStore : store}
+	kvServer := keyValueServer{kvStore : store,
+		connectionChannel: make(chan net.Conn),
+		activeCountChannel: make(chan int),
+		clientMap: make(map[int]clientInfo),
+
+	}
 	return &kvServer
 }
 
@@ -30,7 +51,7 @@ func (kvs *keyValueServer) Start(port int) error {
 
 	// start a server in the given port
 	connString := ":" + strconv.Itoa(port);
-	
+
 	var err error;
 	kvs.server, err = net.Listen("tcp", connString)
 
@@ -39,14 +60,8 @@ func (kvs *keyValueServer) Start(port int) error {
 		return err
 	}
 
-	for {
-		c, err := kvs.server.Accept()
-		if err != nil {
-			fmt.Println(err)
-			return err
-		}
-		go handleConnection(c)
-	}
+	go kvs.acceptClients()
+	go kvs.process()
 	return nil
 }
 
@@ -56,16 +71,64 @@ func (kvs *keyValueServer) Close() {
 }
 
 func (kvs *keyValueServer) CountActive() int {
-	// TODO: implement this!
-	return -1
+	kvs.activeCountChannel <- 0
+	return <- kvs.activeCountChannel
 }
 
 func (kvs *keyValueServer) CountDropped() int {
-	// TODO: implement this!
-	return -1
+	kvs.deadCountChannel <- 0
+	return <- kvs.deadCountChannel
 }
 
 // TODO: add additional methods/functions below!
-func handleConnection(connection  net.Conn) {
+func (kvs *keyValueServer) acceptClients() {
+	for {
+		c, err := kvs.server.Accept()
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		kvs.connectionChannel <- c
+	}
+}
+
+func (kvs *keyValueServer) process() {
+
+	for {
+		select {
+
+		case conn := <-kvs.connectionChannel:
+			kvs.nextId++;
+
+			fmt.Println("New connection received")
+			client := clientInfo{
+				connection : conn,
+				id: kvs.nextId,
+				readChannel: make(chan string),
+				writeChannel: make(chan string, BUFFER_SIZE),
+			}
+			kvs.clientMap[client.id]  = client
+			go client.writeToClient()
+			go client.readFromClient()
+
+		case  <- kvs.activeCountChannel:
+			count := 0;
+			for range kvs.clientMap {
+				count += 1;
+			}
+			kvs.activeCountChannel <- count
+		case count := <- kvs.deadCountChannel:
+			kvs.deadClients += count
+			kvs.deadCountChannel <- kvs.deadClients
+		}
+	}
+}
+
+func (client *clientInfo) writeToClient() {
 
 }
+
+func (client *clientInfo) readFromClient() {
+
+}
+
