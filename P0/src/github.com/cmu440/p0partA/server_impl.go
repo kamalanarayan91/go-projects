@@ -94,6 +94,7 @@ func (kvs *keyValueServer) Start(port int) error {
 
 func (kvs *keyValueServer) Close() {
 	// TODO: implement this!
+	kvs.closeClientChannel <- 0
 	kvs.server.Close()
 }
 
@@ -112,7 +113,7 @@ func (kvs *keyValueServer) acceptClients() {
 	for {
 		c, err := kvs.server.Accept()
 		if err != nil {
-			fmt.Println(err)
+			//fmt.Println(err)
 			return
 		}
 		kvs.connectionChannel <- c
@@ -173,9 +174,16 @@ func (kvs *keyValueServer) process() {
 			retChannelForClient <- retkv
 
 		case clientId := <-kvs.closeClientChannel:
-			kvs.clientMap[clientId].connection.Close()
-			delete(kvs.clientMap, clientId)
-			kvs.deadClients++
+
+			if clientId == 0 {
+				for _, v := range kvs.clientMap {
+					v.connection.Close()
+				}
+			} else {
+				kvs.clientMap[clientId].connection.Close()
+				delete(kvs.clientMap, clientId)
+				kvs.deadClients++
+			}
 		}
 	}
 }
