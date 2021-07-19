@@ -127,7 +127,7 @@ func (kvs *keyValueServer) process() {
 		case conn := <-kvs.connectionChannel:
 			kvs.nextId++
 
-			fmt.Println("New connection received")
+			// fmt.Println("New connection received")
 			client := clientInfo{
 				connection:      conn,
 				id:              kvs.nextId,
@@ -157,9 +157,7 @@ func (kvs *keyValueServer) process() {
 			var retkv keyValue
 			switch op.op {
 			case GET:
-
 				val := kvs.kvStore.Get(op.kv.key)
-				fmt.Printf("GOT VALUE-> for key %s, %v",op.kv.key, val)
 				retkv = keyValue{key: op.kv.key, val: val}
 				break
 			case PUT:
@@ -191,20 +189,13 @@ func (client *clientInfo) writeToClient(kvsChannel chan kvOp, closeClientChannel
 			return
 		case retKv := <-client.retKV:
 			// write to client
-			fmt.Printf(retKv.key)
-
-			if len(retKv.val) >  0 {
-				fmt.Printf(string(retKv.val[0]))
-			}
-
-			fmt.Printf("%v", retKv.val)
-
 			if retKv.val != nil {
 				for _, val := range retKv.val {
 					writeStr := retKv.key + ":" + string(val) + "\n"
-					fmt.Printf("Returining:-> " + writeStr)
+					//fmt.Printf("Returning:->" + writeStr)
 					writer.WriteString(writeStr)
 				}
+				writer.Flush()
 			}
 
 		}
@@ -220,7 +211,7 @@ func (client *clientInfo) readFromClient(kvsChannel chan kvOp, closeClientChanne
 		msgBytes, err := reader.ReadBytes('\n')
 
 		if err == io.EOF {
-			fmt.Printf("client %d read EOF", client.id)
+			fmt.Printf("client %d read EOF\n", client.id)
 			client.finishedReading <- true
 			return
 		}
@@ -229,8 +220,8 @@ func (client *clientInfo) readFromClient(kvsChannel chan kvOp, closeClientChanne
 			return
 		}
 
-		readMsg := string(msgBytes)
-		fmt.Printf("Message %s ", readMsg)
+		readMsg := strings.Trim(string(msgBytes), "\n")
+		// fmt.Printf("Message %s \n", readMsg)
 		kvsChannel <- client.parse(readMsg)
 	}
 }
@@ -241,6 +232,7 @@ func (client *clientInfo) parse(msg string) kvOp {
 	var storeOp kvOp
 	kv := keyValue{key: s[1]}
 	kv.val = make([]([]byte), 0)
+
 
 	switch operation {
 	case "Put":
@@ -254,6 +246,5 @@ func (client *clientInfo) parse(msg string) kvOp {
 		storeOp = kvOp{clientId: client.id, op: DELETE, kv: kv}
 		break
 	}
-	fmt.Printf("storep is -> %+v\n", storeOp)
 	return storeOp
 }
